@@ -5,6 +5,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <png.h>
+
 typedef struct {
   char *font_file;
   char *text;
@@ -61,6 +63,51 @@ char *render_glyph(FT_Face *face, conf_t conf) {
   return NULL;
 }
 
+char *render_png(FT_Face face, char *out, int aa) {
+  FILE *f = fopen(out, "wb");
+  if (!f) return "failed to open output file";
+
+  png_structp png_out = png_create_write_struct(
+    PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if (!png_out) return "failed to create png write struct";
+  png_infop png_info = png_create_info_struct(png_out);
+  if (!png_info)
+    return "failed to create png info struct";
+
+  if (setjmp(png_jmpbuf(png_out)))
+    return "png init io error";
+  png_init_io(png_out, f);
+
+  if (setjmp(png_jmpbuf(png_out)))
+    return "IHDR write error";
+  png_set_IHDR(png_out,
+               png_info,
+               face->glyph->bitmap.width,
+               face->glyph->bitmap.rows,
+               aa ? 8 : 1,
+               PNG_COLOR_TYPE_GRAY,
+               PNG_INTERLACE_NONE,
+               PNG_COMPRESSION_TYPE_DEFAULT,
+               PNG_FILTER_TYPE_DEFAULT);
+  png_write_info(png_out, png_info);
+
+  if (setjmp(png_jmpbuf(png_out)))
+    return "png write error";
+
+  for (int i = 0; i < face->glyph->bitmap.rows; ++i) {
+    const unsigned char *rowptr = face->glyph->bitmap.buffer +
+      (face->glyph->bitmap.pitch * i);
+    png_write_row(png_out, rowptr);
+  }
+
+  if (setjmp(png_jmpbuf(png_out)))
+    return "png end error";
+  png_write_end(png_out, NULL);
+
+  fclose(f);
+  return NULL;
+}
+
 int main(int argc, char **argv) {
   conf_t conf;
   char *conf_err = parse_args(argc, argv, &conf);
@@ -88,6 +135,12 @@ int main(int argc, char **argv) {
   printf("bitmap rows: %d, width: %d\n",
          face->glyph->bitmap.rows,
          face->glyph->bitmap.width);
+
+  char *png_err = render_png(face, "a.png", conf.anti_alias);
+  if (png_err != NULL) {
+    printf("png error: %s\n", png_err);
+    return 3;
+  }
 
   return 0;
 }
