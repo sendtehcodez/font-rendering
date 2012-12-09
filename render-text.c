@@ -2,6 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 typedef struct {
   char *font_file;
   char *text;
@@ -28,6 +31,36 @@ char *parse_args(int argc, char **argv, conf_t *conf) {
   return NULL;
 }
 
+char *render_glyph(FT_Face *face, conf_t conf) {
+  FT_Library ft;
+  FT_Error err;
+
+  err = FT_Init_FreeType(&ft);
+  if (err) return "freetype init error";
+
+  err = FT_New_Face(ft, conf.font_file, 0, face);
+  if (err == FT_Err_Unknown_File_Format)
+    return "unknown font file format";
+  else if (err)
+    return "error reading font file";
+
+  err = FT_Set_Pixel_Sizes(*face, 0, conf.size);
+  if (err) return "error setting font size";
+
+  FT_UInt index = FT_Get_Char_Index(*face, *conf.text);
+  if (index == 0) return "no glyph found for char";
+
+  err = FT_Load_Glyph(*face, index, FT_LOAD_DEFAULT);
+  if (err) return "error loading glyph";
+
+  err = FT_Render_Glyph((*face)->glyph, conf.anti_alias ?
+                        FT_RENDER_MODE_NORMAL :
+                        FT_RENDER_MODE_MONO);
+  if (err) return "error rendering glyph";
+
+  return NULL;
+}
+
 int main(int argc, char **argv) {
   conf_t conf;
   char *conf_err = parse_args(argc, argv, &conf);
@@ -44,6 +77,17 @@ int main(int argc, char **argv) {
          conf.text,
          conf.size,
          conf.anti_alias ? "yes" : "no");
+
+  FT_Face face;
+  char *ft_err = render_glyph(&face, conf);
+  if (ft_err != NULL) {
+    printf("freetype error: %s\n", ft_err);
+    return 2;
+  }
+
+  printf("bitmap rows: %d, width: %d\n",
+         face->glyph->bitmap.rows,
+         face->glyph->bitmap.width);
 
   return 0;
 }
